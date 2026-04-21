@@ -1,9 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
 export default function Support() {
   const [submitted, setSubmitted] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [caseNumber, setCaseNumber] = useState('')
   const [form, setForm] = useState({
     subject: '',
     category: '',
@@ -11,9 +14,34 @@ export default function Support() {
     description: '',
   })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
+
+    const newCaseNumber = `INC${Math.floor(Math.random() * 90000) + 10000}`
+
+    const { error } = await supabase
+      .from('tickets')
+      .insert([{
+        subject: form.subject,
+        category: form.category,
+        priority: form.priority,
+        description: form.description,
+        status: 'Open',
+        customer_name: 'Sandra Kim',
+        customer_email: 'sandra.kim@vertexlogistics.com',
+        company: 'Vertex Logistics',
+      }])
+
+    if (error) {
+      console.error('Error submitting ticket:', error)
+      setLoading(false)
+      return
+    }
+
+    setCaseNumber(newCaseNumber)
     setSubmitted(true)
+    setLoading(false)
   }
 
   return (
@@ -65,8 +93,6 @@ export default function Support() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-
-        {/* Top Bar */}
         <div className="h-16 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-8">
           <div>
             <h2 className="text-white font-semibold">Help & Support</h2>
@@ -204,9 +230,10 @@ export default function Support() {
                     </p>
                     <button
                       type="submit"
-                      className="bg-cyan-400 hover:bg-cyan-300 text-gray-950 font-semibold rounded-lg px-6 py-3 transition"
+                      disabled={loading}
+                      className="bg-cyan-400 hover:bg-cyan-300 text-gray-950 font-semibold rounded-lg px-6 py-3 transition disabled:opacity-50"
                     >
-                      Submit Case
+                      {loading ? 'Submitting...' : 'Submit Case'}
                     </button>
                   </div>
                 </form>
@@ -215,19 +242,18 @@ export default function Support() {
               <div className="bg-gray-900 border border-green-800 rounded-xl p-8 text-center">
                 <div className="text-4xl mb-4">✅</div>
                 <h3 className="text-white text-xl font-semibold mb-2">Case Submitted Successfully</h3>
-                <p className="text-gray-400 mb-2">Your case has been assigned number <span className="text-cyan-400 font-mono">INC0024912</span></p>
+                <p className="text-gray-400 mb-2">Your case has been assigned number <span className="text-cyan-400 font-mono">{caseNumber}</span></p>
                 <p className="text-gray-500 text-sm mb-6">
                   A confirmation has been sent to sandra.kim@vertexlogistics.com. Our support team will respond within 4 hours.
                 </p>
                 <button
-                  onClick={() => setSubmitted(false)}
+                  onClick={() => { setSubmitted(false); setForm({ subject: '', category: '', priority: '', description: '' }) }}
                   className="bg-gray-800 hover:bg-gray-700 text-white rounded-lg px-6 py-3 transition text-sm"
                 >
                   Submit another case
                 </button>
               </div>
             )}
-
           </div>
         </div>
       </div>
