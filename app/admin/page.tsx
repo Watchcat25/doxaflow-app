@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 const customers = [
-  { id: 1, name: "Sandra Kim", company: "Vertex Logistics", email: "sandra.kim@vertexlogistics.com", avatar: "SK" },
-  { id: 2, name: "David Osei", company: "Metro Health Group", email: "david.osei@metrohealth.com", avatar: "DO" },
-  { id: 3, name: "Maria Santos", company: "Peak Surgical", email: "maria.santos@peaksurgical.com", avatar: "MS" },
-  { id: 4, name: "James Park", company: "City Medical Center", email: "james.park@citymedical.com", avatar: "JP" },
-  { id: 5, name: "Angela Torres", company: "Riverside Clinic", email: "angela.torres@riversideclinic.com", avatar: "AT" },
+  { id: 1, name: "Sandra Kim", company: "Vertex Logistics", email: "sandra.kim@vertexlogistics.com", avatar: "SK", initials: "SK" },
+  { id: 2, name: "David Osei", company: "Metro Health Group", email: "david.osei@metrohealth.com", avatar: "DO", initials: "DO" },
+  { id: 3, name: "Maria Santos", company: "Peak Surgical", email: "maria.santos@peaksurgical.com", avatar: "MS", initials: "MS" },
+  { id: 4, name: "James Park", company: "City Medical Center", email: "james.park@citymedical.com", avatar: "JP", initials: "JP" },
+  { id: 5, name: "Angela Torres", company: "Riverside Clinic", email: "angela.torres@riversideclinic.com", avatar: "AT", initials: "AT" },
 ]
 
 const bugTypes = [
@@ -24,24 +25,34 @@ const bugTypes = [
   { id: "p1_outage", label: "Full Portal Outage", description: "Complete system down — all customers affected — all features unavailable", severity: "P1", category: "Critical" },
 ]
 
+const severityConfig: Record<string, { label: string; dot: string; badge: string; border: string }> = {
+  P1: { label: "Critical", dot: "bg-red-500", badge: "bg-red-500/10 text-red-400 border border-red-500/20", border: "border-red-500/30" },
+  P2: { label: "High", dot: "bg-amber-400", badge: "bg-amber-400/10 text-amber-400 border border-amber-400/20", border: "border-amber-400/30" },
+  P3: { label: "Medium", dot: "bg-blue-400", badge: "bg-blue-400/10 text-blue-400 border border-blue-400/20", border: "border-blue-400/30" },
+}
+
 export default function AdminPanel() {
   const [selectedCustomer, setSelectedCustomer] = useState(customers[0])
   const [bugStates, setBugStates] = useState<Record<string, Record<number, boolean>>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [adminEmail, setAdminEmail] = useState('')
+  const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const router = useRouter()
 
-  // Load all bug states from Supabase on mount
   useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) setAdminEmail(user.email || '')
+    }
+    getUser()
     loadBugStates()
   }, [])
 
   const loadBugStates = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('bug_states')
-      .select('*')
-
+    const { data } = await supabase.from('bug_states').select('*')
     if (data) {
       const states: Record<string, Record<number, boolean>> = {}
       data.forEach((row: any) => {
@@ -53,17 +64,13 @@ export default function AdminPanel() {
     setLoading(false)
   }
 
-  const isActive = (bugId: string, customerId: number) => {
-    return bugStates[bugId]?.[customerId] || false
-  }
+  const isActive = (bugId: string, customerId: number) =>
+    bugStates[bugId]?.[customerId] || false
 
   const toggle = (bugId: string, customerId: number) => {
     setBugStates(prev => ({
       ...prev,
-      [bugId]: {
-        ...prev[bugId],
-        [customerId]: !prev[bugId]?.[customerId]
-      }
+      [bugId]: { ...prev[bugId], [customerId]: !prev[bugId]?.[customerId] }
     }))
     setSaved(false)
   }
@@ -75,191 +82,285 @@ export default function AdminPanel() {
       bug_id: bug.id,
       is_active: isActive(bug.id, selectedCustomer.id)
     }))
-
     const { error } = await supabase
       .from('bug_states')
       .upsert(upserts, { onConflict: 'customer_id,bug_id' })
-
-    if (!error) {
-      setSaved(true)
-    }
+    if (!error) setSaved(true)
     setSaving(false)
+  }
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
+    router.push('/')
   }
 
   const activeCount = (customerId: number) =>
     bugTypes.filter(b => isActive(b.id, customerId)).length
 
-  const severityColor = (s: string) => {
-    if (s === "P1") return "bg-red-900 text-red-400"
-    if (s === "P2") return "bg-orange-900 text-orange-400"
-    return "bg-blue-900 text-blue-400"
-  }
+  const filteredBugs = bugTypes.filter(bug => {
+    if (filter === 'active') return isActive(bug.id, selectedCustomer.id)
+    if (filter === 'inactive') return !isActive(bug.id, selectedCustomer.id)
+    return true
+  })
+
+  const totalActive = activeCount(selectedCustomer.id)
+  const adminName = adminEmail.split('@')[0].replace('.', ' ').replace(/\b\w/g, c => c.toUpperCase())
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-[#0a0a0b] text-white flex flex-col" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2a2a2e; border-radius: 4px; }
+        .toggle-track { transition: background 0.2s ease; }
+        .toggle-thumb { transition: transform 0.2s ease; }
+        .bug-row { transition: all 0.15s ease; }
+        .customer-btn { transition: all 0.15s ease; }
+      `}</style>
 
-      {/* Admin Header */}
-      <div className="bg-red-950 border-b border-red-800 px-8 py-3 flex items-center justify-between">
+      {/* Top Navigation */}
+      <header className="h-14 border-b border-white/[0.06] flex items-center justify-between px-6 bg-[#0d0d0f] flex-shrink-0">
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded bg-cyan-400 flex items-center justify-center">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M2 2h3.5v3.5H2V2zm4.5 0H10v3.5H6.5V2zM2 6.5h3.5V10H2V6.5zm4.5 0H10V10H6.5V6.5z" fill="#0a0a0b"/>
+              </svg>
+            </div>
+            <span className="text-sm font-semibold tracking-tight">Doxaflow</span>
+            <span className="text-white/20 text-xs">/</span>
+            <span className="text-white/40 text-xs font-medium">Control Panel</span>
+          </div>
+          <div className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/20 rounded-full px-3 py-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>
+            <span className="text-red-400 text-xs font-medium tracking-wide">RESTRICTED ACCESS</span>
+          </div>
+        </div>
+
         <div className="flex items-center gap-3">
-          <span className="text-red-400 text-sm font-bold">⚠️ ADMIN PANEL</span>
-          <span className="text-red-600 text-sm">— Internal use only — not visible to interns or customers</span>
+          <div className="flex items-center gap-2.5 bg-white/[0.04] border border-white/[0.07] rounded-lg px-3 py-1.5">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-[10px] font-bold text-white">
+              {adminName.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+            </div>
+            <span className="text-white/60 text-xs">{adminEmail}</span>
+          </div>
+          <button
+            onClick={handleSignOut}
+            className="text-white/40 hover:text-white/70 text-xs border border-white/[0.07] hover:border-white/20 rounded-lg px-3 py-1.5 transition-all"
+          >
+            Sign out
+          </button>
         </div>
-        <a href="/dashboard" className="text-red-400 hover:text-red-300 text-sm transition">← Back to Doxaflow</a>
-      </div>
+      </header>
 
-      {loading ? (
-        <div className="flex items-center justify-center h-96">
-          <p className="text-gray-400 text-sm">Loading bug states from database...</p>
-        </div>
-      ) : (
-        <div className="flex">
+      <div className="flex flex-1 overflow-hidden">
 
-          {/* Customer Sidebar */}
-          <div className="w-72 min-h-screen bg-gray-900 border-r border-gray-800 p-4">
-            <h2 className="text-white font-bold mb-1">Customer Accounts</h2>
-            <p className="text-gray-500 text-xs mb-4">Select a customer to manage their bug states</p>
-
-            <div className="space-y-2">
+        {/* Sidebar */}
+        <aside className="w-64 border-r border-white/[0.06] bg-[#0d0d0f] flex flex-col flex-shrink-0">
+          <div className="p-4 border-b border-white/[0.06]">
+            <p className="text-white/30 text-[10px] font-medium tracking-widest uppercase mb-3">Accounts</p>
+            <div className="space-y-1">
               {customers.map(customer => {
                 const count = activeCount(customer.id)
+                const isSelected = selectedCustomer.id === customer.id
                 return (
                   <button
                     key={customer.id}
                     onClick={() => { setSelectedCustomer(customer); setSaved(false) }}
-                    className={`w-full text-left p-3 rounded-xl transition ${
-                      selectedCustomer.id === customer.id
-                        ? 'bg-gray-800 border border-cyan-400'
-                        : 'bg-gray-800 border border-transparent hover:border-gray-600'
+                    className={`customer-btn w-full text-left px-3 py-2.5 rounded-lg flex items-center gap-3 ${
+                      isSelected
+                        ? 'bg-white/[0.08] border border-white/[0.1]'
+                        : 'hover:bg-white/[0.04] border border-transparent'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-cyan-400 flex items-center justify-center text-gray-950 font-bold text-sm flex-shrink-0">
-                        {customer.avatar}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{customer.name}</p>
-                        <p className="text-gray-500 text-xs truncate">{customer.company}</p>
-                      </div>
-                      {count > 0 && (
-                        <span className="bg-red-900 text-red-400 text-xs px-2 py-0.5 rounded-full font-bold flex-shrink-0">
-                          {count}
-                        </span>
-                      )}
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-semibold flex-shrink-0 ${
+                      isSelected ? 'bg-cyan-400 text-[#0a0a0b]' : 'bg-white/[0.08] text-white/50'
+                    }`}>
+                      {customer.initials}
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${isSelected ? 'text-white' : 'text-white/50'}`}>
+                        {customer.name}
+                      </p>
+                      <p className="text-white/25 text-[11px] truncate">{customer.company}</p>
+                    </div>
+                    {count > 0 && (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${
+                        count >= 3 ? 'bg-red-500/20 text-red-400' : 'bg-amber-400/20 text-amber-400'
+                      }`}>
+                        {count}
+                      </span>
+                    )}
                   </button>
                 )
               })}
             </div>
+          </div>
 
-            <div className="mt-6 pt-6 border-t border-gray-800">
-              <p className="text-gray-500 text-xs font-medium mb-3">SEVERITY GUIDE</p>
-              <div className="space-y-2">
-                {[
-                  { label: "P1", desc: "Critical — system down", color: "bg-red-900 text-red-400" },
-                  { label: "P2", desc: "High — major feature broken", color: "bg-orange-900 text-orange-400" },
-                  { label: "P3", desc: "Medium — workaround available", color: "bg-blue-900 text-blue-400" },
-                ].map(s => (
-                  <div key={s.label} className="flex items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${s.color}`}>{s.label}</span>
-                    <span className="text-gray-500 text-xs">{s.desc}</span>
-                  </div>
-                ))}
-              </div>
+          <div className="p-4">
+            <p className="text-white/30 text-[10px] font-medium tracking-widest uppercase mb-3">Severity</p>
+            <div className="space-y-2.5">
+              {Object.entries(severityConfig).map(([key, val]) => (
+                <div key={key} className="flex items-center gap-2.5">
+                  <div className={`w-1.5 h-1.5 rounded-full ${val.dot}`}></div>
+                  <span className="text-white/25 text-xs font-mono">{key}</span>
+                  <span className="text-white/30 text-xs">—</span>
+                  <span className="text-white/40 text-xs">{val.label}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Main Content */}
-          <div className="flex-1 p-8">
+          <div className="mt-auto p-4 border-t border-white/[0.06]">
+            <div className="bg-white/[0.03] rounded-lg p-3">
+              <p className="text-white/25 text-[10px] uppercase tracking-widest mb-2">Session</p>
+              <p className="text-white/50 text-xs leading-relaxed">Changes take effect immediately upon saving. Interns and customers cannot access this panel.</p>
+            </div>
+          </div>
+        </aside>
 
-            {/* Customer Header */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-cyan-400 flex items-center justify-center text-gray-950 font-bold">
-                  {selectedCustomer.avatar}
-                </div>
-                <div>
-                  <h2 className="text-white text-xl font-bold">{selectedCustomer.name}</h2>
-                  <p className="text-gray-400 text-sm">{selectedCustomer.company} — {selectedCustomer.email}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-white text-2xl font-bold">{activeCount(selectedCustomer.id)}</p>
-                <p className="text-gray-400 text-sm">active bugs</p>
+        {/* Main */}
+        <main className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="flex items-center gap-3">
+                <div className="w-4 h-4 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin"></div>
+                <span className="text-white/30 text-sm">Loading environment state...</span>
               </div>
             </div>
+          ) : (
+            <div className="p-6">
 
-            {/* Save Banner */}
-            {saved && (
-              <div className="bg-green-900 border border-green-700 rounded-xl p-4 mb-6 flex items-center gap-3">
-                <span className="text-green-400">✅</span>
-                <p className="text-green-300 font-medium">
-                  Bug states saved to database — {selectedCustomer.name} will now experience the active issues when logging into Doxaflow
-                </p>
-              </div>
-            )}
-
-            {/* Bug Toggles */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white font-semibold">Bug States for {selectedCustomer.name}</h3>
+              {/* Page Header */}
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <h1 className="text-lg font-semibold text-white mb-1">Fault Injection</h1>
+                  <p className="text-white/30 text-sm">Configure active bugs for <span className="text-white/50">{selectedCustomer.name}</span> at {selectedCustomer.company}</p>
+                </div>
                 <button
                   onClick={saveChanges}
                   disabled={saving}
-                  className="bg-cyan-400 hover:bg-cyan-300 text-gray-950 font-semibold rounded-lg px-5 py-2 text-sm transition disabled:opacity-50"
+                  className="flex items-center gap-2 bg-cyan-400 hover:bg-cyan-300 text-[#0a0a0b] font-semibold text-sm rounded-lg px-4 py-2 transition-all disabled:opacity-40"
                 >
-                  {saving ? 'Saving...' : 'Save Changes'}
+                  {saving ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-[#0a0a0b]/30 border-t-[#0a0a0b] rounded-full animate-spin"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M2 7.5L5.5 11L12 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      Apply Changes
+                    </>
+                  )}
                 </button>
               </div>
 
-              {bugTypes.map(bug => {
-                const active = isActive(bug.id, selectedCustomer.id)
-                return (
-                  <div
-                    key={bug.id}
-                    className={`border rounded-xl p-5 transition ${
-                      active ? 'bg-red-950 border-red-800' : 'bg-gray-900 border-gray-800'
+              {/* Stats Row */}
+              <div className="grid grid-cols-4 gap-3 mb-6">
+                {[
+                  { label: "Active Faults", value: totalActive, color: totalActive > 0 ? "text-red-400" : "text-white" },
+                  { label: "Inactive", value: bugTypes.length - totalActive, color: "text-white/50" },
+                  { label: "Total Scenarios", value: bugTypes.length, color: "text-white/50" },
+                  { label: "Severity P1", value: bugTypes.filter(b => b.severity === 'P1' && isActive(b.id, selectedCustomer.id)).length, color: "text-red-400" },
+                ].map(stat => (
+                  <div key={stat.label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+                    <p className="text-white/30 text-xs mb-2">{stat.label}</p>
+                    <p className={`text-2xl font-semibold ${stat.color}`}>{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Save success */}
+              {saved && (
+                <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 mb-5">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 8.5L6.5 12L13 4" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <p className="text-emerald-400 text-sm">Environment state saved — {selectedCustomer.name} will experience {totalActive} active fault{totalActive !== 1 ? 's' : ''}</p>
+                </div>
+              )}
+
+              {/* Filter tabs */}
+              <div className="flex items-center gap-1 mb-4 bg-white/[0.03] border border-white/[0.06] rounded-lg p-1 w-fit">
+                {(['all', 'active', 'inactive'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all ${
+                      filter === f
+                        ? 'bg-white/[0.08] text-white'
+                        : 'text-white/30 hover:text-white/50'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-3 mb-1">
-                          <span className="text-white font-semibold">{bug.label}</span>
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${severityColor(bug.severity)}`}>
-                            {bug.severity}
-                          </span>
-                          <span className="px-2 py-0.5 bg-gray-800 text-gray-400 rounded text-xs">
-                            {bug.category}
-                          </span>
+                    {f === 'all' ? `All (${bugTypes.length})` : f === 'active' ? `Active (${totalActive})` : `Inactive (${bugTypes.length - totalActive})`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Bug List */}
+              <div className="space-y-2">
+                {filteredBugs.map(bug => {
+                  const active = isActive(bug.id, selectedCustomer.id)
+                  const sev = severityConfig[bug.severity]
+                  return (
+                    <div
+                      key={bug.id}
+                      className={`bug-row border rounded-xl p-4 ${
+                        active
+                          ? 'bg-red-500/[0.04] border-red-500/20'
+                          : 'bg-white/[0.02] border-white/[0.06] hover:border-white/[0.1]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className={`w-1.5 h-8 rounded-full flex-shrink-0 ${active ? 'bg-red-500' : 'bg-white/10'}`}></div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className={`text-sm font-medium ${active ? 'text-white' : 'text-white/60'}`}>
+                                {bug.label}
+                              </span>
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md font-mono ${sev.badge}`}>
+                                {bug.severity}
+                              </span>
+                              <span className="text-[10px] text-white/25 border border-white/[0.06] px-2 py-0.5 rounded-md">
+                                {bug.category}
+                              </span>
+                              {active && (
+                                <span className="text-[10px] text-red-400 font-medium flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block"></span>
+                                  ACTIVE
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-white/30 text-xs leading-relaxed">{bug.description}</p>
+                          </div>
                         </div>
-                        <p className="text-gray-400 text-sm">{bug.description}</p>
-                      </div>
 
-                      <button
-                        onClick={() => toggle(bug.id, selectedCustomer.id)}
-                        className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors flex-shrink-0 ml-6 ${
-                          active ? 'bg-red-500' : 'bg-gray-700'
-                        }`}
-                      >
-                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                          active ? 'translate-x-8' : 'translate-x-1'
-                        }`} />
-                      </button>
+                        <button
+                          onClick={() => toggle(bug.id, selectedCustomer.id)}
+                          className={`toggle-track relative flex-shrink-0 w-11 h-6 rounded-full ${
+                            active ? 'bg-red-500' : 'bg-white/10'
+                          }`}
+                        >
+                          <span className={`toggle-thumb absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm ${
+                            active ? 'left-[calc(100%-1.375rem)]' : 'left-0.5'
+                          }`} />
+                        </button>
+                      </div>
                     </div>
+                  )
+                })}
+              </div>
 
-                    {active && (
-                      <div className="mt-3 pt-3 border-t border-red-800">
-                        <p className="text-red-400 text-xs font-medium">
-                          🔴 ACTIVE — {selectedCustomer.name} will experience this issue. This will generate a realistic {bug.severity} support ticket.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
             </div>
-          </div>
-        </div>
-      )}
+          )}
+        </main>
+      </div>
     </div>
   )
 }

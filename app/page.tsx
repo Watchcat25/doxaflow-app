@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
+const ADMIN_EMAILS = ['paul.a@zeloric.io', 'paul.e@zeloric.io']
+
 export default function Home() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -27,7 +29,11 @@ export default function Home() {
       return
     }
 
-    router.push('/dashboard')
+    if (ADMIN_EMAILS.includes(data.user?.email || '')) {
+      router.push('/admin')
+    } else {
+      router.push('/dashboard')
+    }
   }
 
   return (
